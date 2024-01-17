@@ -37,7 +37,7 @@ pub fn remove<'a>(amount: u64, from_pda: &AccountInfo<'a>) -> ProgramResult {
             return Err(ProgramError::InsufficientFunds);
         }
     }
-    wriite_to_pda(pda_data.as_mut(), &account.try_to_vec()?);
+    write_to_pda(pda_data.as_mut(), &account.try_to_vec()?);
     Ok(())
 }
 
@@ -54,7 +54,7 @@ pub fn add<'a>(amount: u64, to_pda: &AccountInfo<'a>) -> ProgramResult {
             return Err(ProgramError::ArithmeticOverflow);
         }
     }
-    wriite_to_pda(pda_data.as_mut(), &account.try_to_vec()?);
+    write_to_pda(pda_data.as_mut(), &account.try_to_vec()?);
     Ok(())
 }
 
@@ -63,7 +63,7 @@ pub fn update_owner<'a>(new_owner: Pubkey, config_pda: &AccountInfo<'a>) -> Prog
     let mut pda_data = config_pda.try_borrow_mut_data()?;
     let mut config = Config::try_from_slice(&pda_data)?;
     config.owner = new_owner;
-    wriite_to_pda(pda_data.as_mut(), &config.try_to_vec()?);
+    write_to_pda(pda_data.as_mut(), &config.try_to_vec()?);
     Ok(())
 }
 
@@ -82,12 +82,13 @@ pub fn initialize_config<'a>(
         config_pda,
         mem::size_of::<Config>(),
     )?;
+    config_pda.realloc(33, true)?;
     let mut pda_data = config_pda.try_borrow_mut_data()?;
-    let mut config = Config::try_from_slice(&pda_data)?;
-    config.owner = *owner;
-    config.decimals = decimals;
-    wriite_to_pda(pda_data.as_mut(), &config.try_to_vec()?);
-    pda_data[..config.try_to_vec()?.len()].copy_from_slice(&config.try_to_vec()?);
+    let config = Config {
+        owner: *owner,
+        decimals: decimals,
+    };
+    write_to_pda(pda_data.as_mut(), &config.try_to_vec()?);
     Ok(())
 }
 
@@ -173,6 +174,26 @@ pub fn create_pda<'a>(
     seeds_vec.push(pda_dump_slice);
     let rent = Rent::get()?;
     let rent_lamports = rent.minimum_balance(account_size);
+
+    if pda.lamports() > 0 {
+        if rent_lamports > pda.lamports() {
+            let missing_rent = rent_lamports - pda.lamports();
+            invoke_signed(
+                &system_instruction::transfer(payer.key, &pda_key, missing_rent),
+                &[payer.clone(), pda.clone()],
+                &[seeds_vec.as_slice()],
+            )
+            .unwrap();
+        }
+        invoke_signed(
+            &system_instruction::assign(&pda.key, program_id),
+            &[pda.clone()],
+            &[seeds_vec.as_slice()],
+        )
+        .unwrap();
+        return Ok(());
+    }
+
     invoke_signed(
         &system_instruction::create_account(
             payer.key,
@@ -189,6 +210,6 @@ pub fn create_pda<'a>(
     return Ok(());
 }
 
-fn wriite_to_pda(pda_data: &mut [u8], data: &[u8]) {
+fn write_to_pda(pda_data: &mut [u8], data: &[u8]) {
     pda_data[0..data.len()].copy_from_slice(data);
 }

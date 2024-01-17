@@ -233,6 +233,26 @@ async fn test_initialize() {
 }
 
 #[tokio::test]
+async fn test_pda_has_lamports_initialize() {
+    let (mut context, program_id, owner) = prepare().await;
+    let (config_pda, _) = Pubkey::find_program_address(&[b"config"], &program_id);
+
+    transfer_sol(
+        &mut context.banks_client,
+        &context.payer,
+        &config_pda,
+        sol(1.0),
+    )
+    .await
+    .unwrap();
+
+    initialize(&owner, &program_id, &mut context.banks_client).await;
+    let config_data: Config = get_config(&mut context.banks_client, &program_id).await;
+    assert_eq!(config_data.decimals, 18);
+    assert_eq!(config_data.owner, owner.pubkey());
+}
+
+#[tokio::test]
 async fn test_change_owner() {
     let (mut context, program_id, owner) = prepare().await;
     initialize(&owner, &program_id, &mut context.banks_client).await;
