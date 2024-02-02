@@ -11,6 +11,11 @@ pub fn check_pda(program_id: &Pubkey, seeds: &[&[u8]], pda: &AccountInfo) -> Pro
         return Err(ProgramError::Custom(StorageError::InvalidPda as u32));
     }
 
+    // double check if we are the owner. In case the multisig transfered the owner
+    if pda.owner != program_id {
+        return Err(ProgramError::Custom(StorageError::InvalidOwner as u32));
+    }
+
     Ok(())
 }
 
@@ -98,4 +103,5 @@ pub fn write_to_pda(pda_data: &mut [u8], data: &[u8]) {
 // storage related errors range is 100...199
 pub enum StorageError {
     InvalidPda = 100,
+    InvalidOwner = 101
 }
