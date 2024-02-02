@@ -100,6 +100,45 @@ impl Multisig {
         )?;
         Ok(multisig)
     }
+
+    pub fn execute_action(
+        &self,
+        program_id: &Pubkey,
+        action: &Action,
+        accounts: &[AccountInfo],
+    ) -> ProgramResult {
+        msg!("Executing action {:?}", action);
+        let accounts_iter = &mut accounts.iter();
+        let mut account_meta: Vec<AccountMeta> = vec![];
+        for account in action.accounts.iter() {
+            let next_account = next_account_info(accounts_iter)?;
+            if *next_account.key != account.0 {
+                return Err(ProgramError::InvalidAccountData);
+            }
+            if account.2 {
+                account_meta.push(AccountMeta::new(*next_account.key, account.2))
+            } else {
+                account_meta.push(AccountMeta::new_readonly(
+                    *next_account.key,
+                    account.1
+                ))
+            }
+        }
+
+        let seeds = [b"multisig", program_id.as_ref(), &self.name];
+        let (_, pda_bump) = Pubkey::find_program_address(&seeds, program_id);
+        let mut seeds_vec = seeds.to_vec();
+        let pda_dump_slice = &[pda_bump];
+        seeds_vec.push(pda_dump_slice);
+
+        msg!("Invoking with accounts {:?}", accounts);
+        msg!("Invoking with accounts meta {:?}", account_meta);
+        invoke_signed(
+            &Instruction::new_with_bytes(action.program_id, &action.data, account_meta),
+            accounts,
+            &[seeds_vec.as_slice()],
+        )
+    }
     pub fn size(&self) -> usize {
         // vecs have an additional 4 bytes
         let members_size = self.members.len() * std::mem::size_of::<Pubkey>() + 4;
@@ -187,51 +226,6 @@ pub fn set_threshold(
     multisig.save(multisig_account, multisig_account)?;
 
     Ok(())
-}
-
-pub fn execute_action(
-    program_id: &Pubkey,
-    multisig_account: &AccountInfo,
-    action: &Action,
-    accounts: &[AccountInfo],
-) -> ProgramResult {
-    msg!("Executing action {:?}", action);
-    let accounts_iter = &mut accounts.iter();
-    let mut account_infos: Vec<AccountInfo> = vec![];
-    let mut account_meta: Vec<AccountMeta> = vec![];
-    for account in action.accounts.iter() {
-        let next_account = next_account_info(accounts_iter)?;
-        if next_account.key != account {
-            return Err(ProgramError::InvalidAccountData);
-        }
-        account_infos.push(next_account.clone());
-        if next_account.is_writable {
-            account_meta.push(AccountMeta::new(
-                *next_account.key,
-                *next_account.key == *multisig_account.key,
-            ))
-        } else {
-            account_meta.push(AccountMeta::new_readonly(
-                *next_account.key,
-                *next_account.key == *multisig_account.key,
-            ))
-        }
-    }
-
-    let multisig = Multisig::get(program_id, multisig_account)?;
-    let seeds = [b"multisig", program_id.as_ref(), &multisig.name];
-    let (_, pda_bump) = Pubkey::find_program_address(&seeds, program_id);
-    let mut seeds_vec = seeds.to_vec();
-    let pda_dump_slice = &[pda_bump];
-    seeds_vec.push(pda_dump_slice);
-
-    msg!("Invoking with accounts {:?}", account_infos);
-    msg!("Invoking with accounts meta {:?}", account_meta);
-    invoke_signed(
-        &Instruction::new_with_bytes(action.program_id, &action.data, account_meta),
-        &account_infos,
-        &[seeds_vec.as_slice()],
-    )
 }
 
 // multisig related errors rang eis 0..99

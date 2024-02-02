@@ -10,14 +10,15 @@ use solana_program::{
 };
 
 use crate::{
-    multisig::{self, Multisig},
+    multisig::Multisig,
     storage,
 };
 
 #[derive(BorshDeserialize, BorshSerialize, Debug, Clone)]
 pub struct Action {
     pub program_id: Pubkey,
-    pub accounts: Vec<Pubkey>,
+    // Pubkey, signer, writable
+    pub accounts: Vec<(Pubkey, bool, bool)>,
     pub data: Vec<u8>,
 }
 
@@ -25,7 +26,7 @@ impl Action {
     fn size(&self) -> usize {
         let program_id_size = mem::size_of::<Pubkey>();
         // vecs have an additional 4 bytes
-        let accounts_size = self.accounts.len() * mem::size_of::<Pubkey>() + 4;
+        let accounts_size = self.accounts.len() * (mem::size_of::<Pubkey>() + 1 + 1) + 4;
         let data_size = self.data.len() + 4;
 
         return program_id_size + accounts_size + data_size;
@@ -217,9 +218,8 @@ pub fn execute(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult {
     proposal.save(proposal_account)?;
 
     for action in proposal.actions.iter() {
-        multisig::execute_action(
+        multisig.execute_action(
             program_id,
-            multisig_account,
             action,
             next_account_infos(accounts_iter, action.accounts.len())?,
         )?;

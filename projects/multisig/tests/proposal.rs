@@ -34,7 +34,10 @@ async fn test_create_proposal() {
     let new_member = Keypair::new();
     let add_member_action = Action {
         program_id,
-        accounts: vec![multisig_pda, system_program::id()],
+        accounts: vec![
+            (multisig_pda, true, false),
+            (system_program::id(), false, false),
+        ],
         data: Instruction::AddMember {
             member: new_member.pubkey(),
         }
@@ -95,7 +98,10 @@ async fn test_create_proposal_non_member() {
     .unwrap();
     let add_member_action = Action {
         program_id,
-        accounts: vec![multisig_pda, system_program::id()],
+        accounts: vec![
+            (multisig_pda, true, false),
+            (system_program::id(), false, false),
+        ],
         data: Instruction::AddMember {
             member: new_member.pubkey(),
         }
@@ -139,7 +145,10 @@ async fn test_approve_proposal() {
     let new_member = Keypair::new();
     let add_member_action = Action {
         program_id,
-        accounts: vec![multisig_pda, system_program::id()],
+        accounts: vec![
+            (multisig_pda, true, false),
+            (system_program::id(), false, false),
+        ],
         data: Instruction::AddMember {
             member: new_member.pubkey(),
         }
@@ -209,7 +218,10 @@ async fn test_approve_proposal_non_member() {
     .unwrap();
     let add_member_action = Action {
         program_id,
-        accounts: vec![multisig_pda, system_program::id()],
+        accounts: vec![
+            (multisig_pda, true, false),
+            (system_program::id(), true, false),
+        ],
         data: Instruction::AddMember {
             member: new_member.pubkey(),
         }
@@ -274,7 +286,11 @@ async fn test_approve_proposal_and_execute() {
     let new_member = Keypair::new();
     let add_member_action = Action {
         program_id: program_id,
-        accounts: vec![multisig_pda, program_id, system_program::id()],
+        accounts: vec![
+            (multisig_pda, true, true),
+            (program_id, false, false),
+            (system_program::id(), false, false),
+        ],
         data: Instruction::AddMember {
             member: new_member.pubkey(),
         }
@@ -350,7 +366,11 @@ async fn test_no_execute_without_threshold() {
     let new_member = Keypair::new();
     let add_member_action = Action {
         program_id,
-        accounts: vec![multisig_pda, program_id, system_program::id()],
+        accounts: vec![
+            (multisig_pda, true, true),
+            (program_id, false, false),
+            (system_program::id(), false, false),
+        ],
         data: Instruction::AddMember {
             member: new_member.pubkey(),
         }
@@ -359,7 +379,11 @@ async fn test_no_execute_without_threshold() {
     };
     let increase_threshold_action = Action {
         program_id,
-        accounts: vec![multisig_pda, program_id, system_program::id()],
+        accounts: vec![
+            (multisig_pda, true, true),
+            (program_id, false, false),
+            (system_program::id(), false, false),
+        ],
         data: Instruction::ChangeThreshold { threshold: 2 }
             .try_to_vec()
             .unwrap(),
@@ -405,7 +429,11 @@ async fn test_no_execute_without_threshold() {
     let new_member_2 = Keypair::new();
     let add_member_2_action = Action {
         program_id,
-        accounts: vec![multisig_pda, program_id, system_program::id()],
+        accounts: vec![
+            (multisig_pda, true, true),
+            (program_id, false, false),
+            (system_program::id(), false, false),
+        ],
         data: Instruction::AddMember {
             member: new_member_2.pubkey(),
         }
@@ -519,7 +547,11 @@ async fn test_execute_proposal_once() {
     let new_member = Keypair::new();
     let add_member_action = Action {
         program_id,
-        accounts: vec![multisig_pda, program_id, system_program::id()],
+        accounts: vec![
+            (multisig_pda, true, false),
+            (program_id, false, false),
+            (system_program::id(), false, false),
+        ],
         data: Instruction::AddMember {
             member: new_member.pubkey(),
         }
@@ -602,7 +634,11 @@ async fn test_cannot_approve_twice() {
     let new_member = Keypair::new();
     let add_member_action = Action {
         program_id,
-        accounts: vec![multisig_pda, program_id, system_program::id()],
+        accounts: vec![
+            (multisig_pda, true, true),
+            (program_id, false, false),
+            (system_program::id(), false, false),
+        ],
         data: Instruction::AddMember {
             member: new_member.pubkey(),
         }

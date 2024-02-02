@@ -167,7 +167,7 @@ async fn test_remove_member_invalid_threshold() {
     let new_member = Keypair::new();
     let add_member_action = Action {
         program_id,
-        accounts: vec![multisig_pda, program_id, system_program::id()],
+        accounts: vec![(multisig_pda, true, false), (program_id, false, false), (system_program::id(), false, false)],
         data: Instruction::AddMember {
             member: new_member.pubkey(),
         }
@@ -176,14 +176,14 @@ async fn test_remove_member_invalid_threshold() {
     };
     let increase_threshold_action = Action {
         program_id,
-        accounts: vec![multisig_pda, program_id, system_program::id()],
+        accounts: vec![(multisig_pda, true, false), (program_id, false, false), (system_program::id(), false, false)],
         data: Instruction::ChangeThreshold { threshold: 2 }
             .try_to_vec()
             .unwrap(),
     };
     let remove_member_action = Action {
         program_id,
-        accounts: vec![multisig_pda, program_id, system_program::id()],
+        accounts: vec![(multisig_pda, true, false), (program_id, false, false), (system_program::id(), false, false)],
         data: Instruction::RemoveMember {
             member: new_member.pubkey(),
         }
@@ -261,7 +261,7 @@ async fn test_too_high_threshold() {
 
     let increase_threshold_action = Action {
         program_id,
-        accounts: vec![multisig_pda, program_id, system_program::id()],
+        accounts: vec![(multisig_pda, true, false), (program_id, false, false), (system_program::id(), false, false)],
         data: Instruction::ChangeThreshold { threshold: 2 }
             .try_to_vec()
             .unwrap(),
@@ -327,7 +327,7 @@ async fn test_too_low_threshold() {
 
     let increase_threshold_action = Action {
         program_id,
-        accounts: vec![multisig_pda, program_id, system_program::id()],
+        accounts: vec![(multisig_pda, true, false), (program_id, false, false), (system_program::id(), false, false)],
         data: Instruction::ChangeThreshold { threshold: 0 }
             .try_to_vec()
             .unwrap(),
@@ -393,7 +393,7 @@ async fn test_no_member_left() {
 
     let remove_member_action = Action {
         program_id,
-        accounts: vec![multisig_pda, program_id, system_program::id()],
+        accounts: vec![(multisig_pda, true, false), (program_id, false, false), (system_program::id(), false, false)],
         data: Instruction::RemoveMember {
             member: owner.pubkey(),
         }
