@@ -1,28 +1,13 @@
 use solana_program::{
-    account_info::AccountInfo, entrypoint::ProgramResult, msg, program::invoke_signed, program_error::ProgramError, pubkey::Pubkey, rent::Rent, system_instruction, system_program, sysvar::Sysvar
+    account_info::AccountInfo, entrypoint::ProgramResult, msg, program::invoke_signed,
+    program_error::ProgramError, pubkey::Pubkey, rent::Rent, system_instruction,
+    sysvar::Sysvar,
 };
 
-pub fn verify_pda(program_id: &Pubkey, seeds: &[&[u8]], pda: &AccountInfo) -> ProgramResult {
+pub fn check_pda(program_id: &Pubkey, seeds: &[&[u8]], pda: &AccountInfo) -> ProgramResult {
     let (pda_key, _) = Pubkey::find_program_address(seeds, program_id);
     if pda_key != *pda.key {
         msg!("Accounts don't match");
-        return Err(ProgramError::Custom(StorageError::InvalidPda as u32));
-    }
-
-    if pda.owner != program_id && *pda.owner != system_program::id() {
-        msg!("Owner doesn't match");
-        return Err(ProgramError::Custom(StorageError::InvalidPda as u32));
-    }
-
-    Ok(())
-}
-
-pub fn check_pda(program_id: &Pubkey, pda: &AccountInfo) -> ProgramResult {
-    if pda.owner != program_id {
-        return Err(ProgramError::Custom(StorageError::InvalidPda as u32));
-    }
-
-    if pda.data_is_empty() {
         return Err(ProgramError::Custom(StorageError::InvalidPda as u32));
     }
 
@@ -35,7 +20,7 @@ pub fn create_pda<'a>(
     seeds: &[&[u8]],
     pda: &AccountInfo<'a>,
     account_size: usize,
-) -> ProgramResult {
+) -> Result<u8, ProgramError> {
     let (pda_key, pda_bump) = Pubkey::find_program_address(seeds, program_id);
     if pda.owner != &solana_program::system_program::id() {
         msg!("Account already existing");
@@ -64,7 +49,7 @@ pub fn create_pda<'a>(
             &[seeds_vec.as_slice()],
         )
         .unwrap();
-        return Ok(());
+        return Ok(pda_bump);
     }
 
     invoke_signed(
@@ -80,7 +65,30 @@ pub fn create_pda<'a>(
     )
     .unwrap();
     msg!("PDA ({}) created with size: {}", pda_key, account_size);
-    return Ok(());
+    return Ok(pda_bump);
+}
+
+pub fn resize_pda<'a>(
+    pda: &AccountInfo<'a>,
+    new_size: usize,
+    payer: &AccountInfo<'a>,
+) -> ProgramResult {
+    let rent = Rent::get().unwrap();
+    let rent_lamports = rent.minimum_balance(new_size);
+
+    if rent_lamports > pda.lamports() {
+        let missing_rent = rent_lamports - pda.lamports();
+        if missing_rent > 0 {
+            invoke_signed(
+                &system_instruction::transfer(&payer.key, &pda.key, missing_rent),
+                &[payer.clone(), pda.clone()],
+                &[],
+            )?;
+        }
+    }
+    pda.realloc(new_size.try_into().unwrap(), false)?;
+    msg!("PDA ({}) resized with size: {}", pda.key, new_size);
+    Ok(())
 }
 
 pub fn write_to_pda(pda_data: &mut [u8], data: &[u8]) {

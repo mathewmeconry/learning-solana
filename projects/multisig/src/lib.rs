@@ -4,14 +4,14 @@ use solana_program::{
     account_info::AccountInfo, entrypoint, entrypoint::ProgramResult, pubkey::Pubkey,
 };
 
-mod multisig;
-mod proposal;
+pub mod multisig;
+pub mod proposal;
 mod storage;
 
 #[derive(BorshDeserialize, BorshSerialize, Debug)]
-enum Instruction {
+pub enum Instruction {
     Create {
-        name: u8,
+        name: Vec<u8>,
         members: Vec<Pubkey>,
         threshold: u64,
     },
@@ -22,15 +22,15 @@ enum Instruction {
         member: Pubkey,
     },
     Approve {
+        try_execute: bool,
     },
     CreateProposal {
         id: u64,
-        name: String,
-        description: String,
+        name: Vec<u8>,
+        description: Vec<u8>,
         actions: Vec<Action>,
     },
-    ExecuteProposal {
-    },
+    ExecuteProposal {},
     ChangeThreshold {
         threshold: u64,
     },
@@ -38,10 +38,10 @@ enum Instruction {
 
 entrypoint!(process_instruction);
 
-pub fn process_instruction(
-    program_id: &Pubkey,
-    accounts: &[AccountInfo],
-    instruction_data: &[u8],
+pub fn process_instruction<'a, 'b, 'c, 'd>(
+    program_id: &'a Pubkey,
+    accounts: &'b [AccountInfo<'c>],
+    instruction_data: &'d [u8],
 ) -> ProgramResult {
     let instruction = Instruction::try_from_slice(instruction_data)?;
     match instruction {
@@ -63,9 +63,9 @@ pub fn process_instruction(
             description,
             actions,
         } => proposal::create(program_id, accounts, id, name, description, actions),
-        Instruction::ExecuteProposal {  } => {
-            proposal::execute(program_id, accounts)
+        Instruction::ExecuteProposal {} => proposal::execute(program_id, accounts),
+        Instruction::Approve { try_execute } => {
+            proposal::approve(program_id, accounts, try_execute)
         }
-        Instruction::Approve {  } => proposal::approve(program_id, accounts),
     }
 }

@@ -1,4 +1,4 @@
-use std::{mem, slice::Iter, vec};
+use std::vec;
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use solana_program::{
@@ -15,27 +15,51 @@ use crate::{proposal::Action, storage};
 
 #[derive(BorshDeserialize, BorshSerialize, Debug)]
 pub struct Multisig {
-    pub name: u8,
+    pub name: Vec<u8>,
     pub members: Vec<Pubkey>,
     pub threshold: u64,
 }
 
 impl Multisig {
-    pub fn new(name: u8, members: Vec<Pubkey>, threshold: u64) -> Self {
+    pub fn new(name: Vec<u8>, members: Vec<Pubkey>, threshold: u64) -> Self {
         Multisig {
             name,
             members,
             threshold,
         }
     }
-    fn add_member(&mut self, member: Pubkey) {
+    fn add_member(&mut self, member: Pubkey) -> ProgramResult {
+        // if already a member, do nothing
+        if self.is_member(&member) {
+            return Ok(());
+        }
         self.members.push(member);
+
+        Ok(())
     }
-    fn remove_member(&mut self, member: Pubkey) {
+    fn remove_member(&mut self, member: Pubkey) -> ProgramResult {
         self.members.retain(|x| *x != member);
+
+        if self.members.len() == 0 {
+            return Err(ProgramError::Custom(MultisigError::NoMembers as u32));
+        }
+
+        if self.threshold > self.members.len() as u64 {
+            return Err(ProgramError::Custom(MultisigError::ThresholdTooHigh as u32));
+        }
+
+        Ok(())
     }
-    fn set_threshold(&mut self, threshold: u64) {
+    fn set_threshold(&mut self, threshold: u64) -> ProgramResult {
+        if threshold > self.members.len() as u64 {
+            return Err(ProgramError::Custom(MultisigError::ThresholdTooHigh as u32));
+        }
+        if threshold == 0 {
+            return Err(ProgramError::Custom(MultisigError::ThresholdTooLow as u32));
+        }
+
         self.threshold = threshold;
+        Ok(())
     }
     pub fn is_member(&self, member: &Pubkey) -> bool {
         return self.members.contains(member);
@@ -46,24 +70,50 @@ impl Multisig {
         }
         Ok(())
     }
-    fn save(&self, account: &AccountInfo) {
+    fn save<'a>(&self, account: &AccountInfo<'a>, payer: &AccountInfo<'a>) -> ProgramResult {
+        storage::resize_pda(account, self.size(), payer)?;
         let mut multisig_data = account.try_borrow_mut_data().unwrap();
         storage::write_to_pda(multisig_data.as_mut(), &self.try_to_vec().unwrap());
+        Ok(())
+    }
+    fn create<'a, 'b>(
+        &self,
+        program_id: &Pubkey,
+        payer: &'a AccountInfo<'b>,
+        account: &'a AccountInfo<'b>,
+    ) -> ProgramResult {
+        let seeds = [b"multisig", program_id.as_ref(), &self.name];
+        storage::create_pda(program_id, payer, &seeds, account, self.size())?;
+        self.save(account, payer)?;
+        Ok(())
     }
     pub fn get(program_id: &Pubkey, account: &AccountInfo) -> Result<Multisig, ProgramError> {
-        storage::check_pda(program_id, account)?;
         let multisig_data = account.try_borrow_mut_data()?;
-        match Multisig::try_from_slice(&multisig_data) {
+        let multisig = match Multisig::try_from_slice(&multisig_data) {
             Ok(multisig) => Ok(multisig),
             Err(_) => Err(ProgramError::InvalidAccountData),
-        }
+        }?;
+        storage::check_pda(
+            program_id,
+            &[b"multisig", program_id.as_ref(), &multisig.name],
+            account,
+        )?;
+        Ok(multisig)
+    }
+    pub fn size(&self) -> usize {
+        // vecs have an additional 4 bytes
+        let members_size = self.members.len() * std::mem::size_of::<Pubkey>() + 4;
+        let name_size = self.name.len() + 4;
+
+        // members_size + name_size + threshold size
+        return members_size + name_size + 8;
     }
 }
 
-pub fn create(
+pub fn create<'a, 'b>(
     program_id: &Pubkey,
-    accounts: &[AccountInfo],
-    name: u8,
+    accounts: &'a [AccountInfo<'b>],
+    name: Vec<u8>,
     members: Vec<Pubkey>,
     threshold: u64,
 ) -> ProgramResult {
@@ -72,17 +122,13 @@ pub fn create(
     let payer = next_account_info(accounts_iter)?;
     let multisig_account = next_account_info(accounts_iter)?;
 
-    if payer.is_signer == false {
-        return Err(ProgramError::MissingRequiredSignature);
+    let mut multisig = Multisig::new(name, vec![], threshold);
+    // use add_member() to deduplicate members array
+    for member in members.iter() {
+        multisig.add_member(*member)?;
     }
 
-    let seeds = [b"multisig", program_id.as_ref(), &[name]];
-    let multisig_size = mem::size_of::<Multisig>();
-    storage::create_pda(program_id, payer, &seeds, multisig_account, multisig_size)?;
-
-    multisig_account.realloc(multisig_size, true)?;
-    let multisig = Multisig::new(name, members, threshold);
-    multisig.save(multisig_account);
+    multisig.create(program_id, payer, multisig_account)?;
     Ok(())
 }
 
@@ -99,8 +145,8 @@ pub fn add_member(
     }
 
     let mut multisig = Multisig::get(program_id, multisig_account)?;
-    multisig.add_member(*new_member);
-    multisig.save(multisig_account);
+    multisig.add_member(*new_member)?;
+    multisig.save(multisig_account, multisig_account)?;
 
     Ok(())
 }
@@ -118,8 +164,8 @@ pub fn remove_member(
     }
 
     let mut multisig = Multisig::get(program_id, multisig_account)?;
-    multisig.remove_member(*member_to_remove);
-    multisig.save(multisig_account);
+    multisig.remove_member(*member_to_remove)?;
+    multisig.save(multisig_account, multisig_account)?;
 
     Ok(())
 }
@@ -137,8 +183,8 @@ pub fn set_threshold(
     }
 
     let mut multisig = Multisig::get(program_id, multisig_account)?;
-    multisig.set_threshold(new_threshold);
-    multisig.save(multisig_account);
+    multisig.set_threshold(new_threshold)?;
+    multisig.save(multisig_account, multisig_account)?;
 
     Ok(())
 }
@@ -147,8 +193,10 @@ pub fn execute_action(
     program_id: &Pubkey,
     multisig_account: &AccountInfo,
     action: &Action,
-    accounts_iter: &mut Iter<AccountInfo>,
+    accounts: &[AccountInfo],
 ) -> ProgramResult {
+    msg!("Executing action {:?}", action);
+    let accounts_iter = &mut accounts.iter();
     let mut account_infos: Vec<AccountInfo> = vec![];
     let mut account_meta: Vec<AccountMeta> = vec![];
     for account in action.accounts.iter() {
@@ -157,16 +205,28 @@ pub fn execute_action(
             return Err(ProgramError::InvalidAccountData);
         }
         account_infos.push(next_account.clone());
-        account_meta.push(AccountMeta::new(*next_account.key, next_account.is_signer));
+        if next_account.is_writable {
+            account_meta.push(AccountMeta::new(
+                *next_account.key,
+                *next_account.key == *multisig_account.key,
+            ))
+        } else {
+            account_meta.push(AccountMeta::new_readonly(
+                *next_account.key,
+                *next_account.key == *multisig_account.key,
+            ))
+        }
     }
 
     let multisig = Multisig::get(program_id, multisig_account)?;
-    let seeds = [b"multisig", program_id.as_ref(), &[multisig.name]];
+    let seeds = [b"multisig", program_id.as_ref(), &multisig.name];
     let (_, pda_bump) = Pubkey::find_program_address(&seeds, program_id);
     let mut seeds_vec = seeds.to_vec();
     let pda_dump_slice = &[pda_bump];
     seeds_vec.push(pda_dump_slice);
 
+    msg!("Invoking with accounts {:?}", account_infos);
+    msg!("Invoking with accounts meta {:?}", account_meta);
     invoke_signed(
         &Instruction::new_with_bytes(action.program_id, &action.data, account_meta),
         &account_infos,
@@ -177,4 +237,7 @@ pub fn execute_action(
 // multisig related errors rang eis 0..99
 pub enum MultisigError {
     NotAMember = 0,
+    ThresholdTooHigh = 1,
+    ThresholdTooLow = 2,
+    NoMembers = 3,
 }
