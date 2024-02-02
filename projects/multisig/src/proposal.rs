@@ -80,7 +80,11 @@ impl Proposal {
         storage::write_to_pda(proposal_data.as_mut(), &self.try_to_vec().unwrap());
         Ok(())
     }
-    fn get(program_id: &Pubkey, account: &AccountInfo) -> Result<Proposal, ProgramError> {
+    fn get(
+        program_id: &Pubkey,
+        multisig: &Pubkey,
+        account: &AccountInfo,
+    ) -> Result<Proposal, ProgramError> {
         let proposal_data = account.try_borrow_mut_data()?;
         let proposal = match Proposal::try_from_slice(&proposal_data) {
             Ok(proposal) => Ok(proposal),
@@ -90,7 +94,7 @@ impl Proposal {
         let seeds = [
             b"proposal",
             program_id.as_ref(),
-            &proposal.multisig.as_ref(),
+            &multisig.as_ref(),
             &proposal.id.to_be_bytes(),
         ];
         storage::check_pda(program_id, &seeds, account)?;
@@ -175,8 +179,7 @@ pub fn approve(program_id: &Pubkey, accounts: &[AccountInfo], try_execute: bool)
     }
 
     let multisig = Multisig::get(program_id, multisig_account)?;
-    let mut proposal = Proposal::get(program_id, proposal_account)?;
-
+    let mut proposal = Proposal::get(program_id, &multisig_account.key, proposal_account)?;
 
     proposal.approve(&multisig, member.key)?;
     storage::resize_pda(proposal_account, proposal.size(), member)?;
@@ -199,8 +202,7 @@ pub fn execute(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult {
     let multisig_account = next_account_info(accounts_iter)?;
     let proposal_account = next_account_info(accounts_iter)?;
 
-    let mut proposal = Proposal::get(program_id, proposal_account)?;
-
+    let mut proposal = Proposal::get(program_id, &multisig_account.key, proposal_account)?;
 
     let multisig = Multisig::get(program_id, multisig_account)?;
     if !proposal.has_reached_threshold(&multisig) {
