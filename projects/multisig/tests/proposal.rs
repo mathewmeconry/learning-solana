@@ -582,3 +582,93 @@ async fn test_execute_proposal_once() {
         _ => panic!("expected error"),
     }
 }
+
+#[tokio::test]
+async fn test_cannot_approve_twice() {
+    let (mut context, program_id, owner) = prepare().await;
+    let multisig_name = b"test".to_vec();
+    let multisig_pda = create_multisig(
+        &program_id,
+        &mut context.banks_client,
+        &owner,
+        &multisig_name,
+        vec![owner.pubkey()],
+    )
+    .await;
+    transfer_sol(&mut context.banks_client, &owner, &multisig_pda, sol(2.0))
+        .await
+        .unwrap();
+
+    let new_member = Keypair::new();
+    let add_member_action = Action {
+        program_id,
+        accounts: vec![multisig_pda, program_id, system_program::id()],
+        data: Instruction::AddMember {
+            member: new_member.pubkey(),
+        }
+        .try_to_vec()
+        .unwrap(),
+    };
+
+    let proposal_pda = create_proposal(
+        &program_id,
+        &mut context.banks_client,
+        &multisig_pda,
+        &owner,
+        0,
+        b"test".to_vec(),
+        b"test description".to_vec(),
+        vec![add_member_action.clone()],
+    )
+    .await
+    .unwrap();
+
+    approve_proposal(
+        &program_id,
+        &mut context.banks_client,
+        &owner,
+        vec![
+            AccountMeta::new(owner.pubkey(), true),
+            AccountMeta::new_readonly(multisig_pda, false),
+            AccountMeta::new(proposal_pda, false),
+            AccountMeta::new_readonly(system_program::id(), false),
+            AccountMeta::new(owner.pubkey(), true),
+            AccountMeta::new_readonly(multisig_pda, false),
+            AccountMeta::new(proposal_pda, false),
+            AccountMeta::new(multisig_pda, false),
+            AccountMeta::new_readonly(program_id, false),
+            AccountMeta::new_readonly(system_program::id(), false),
+        ],
+        false,
+    )
+    .await
+    .unwrap();
+
+    let approve_2_result = approve_proposal(
+        &program_id,
+        &mut context.banks_client,
+        &owner,
+        vec![
+            AccountMeta::new(owner.pubkey(), true),
+            AccountMeta::new_readonly(multisig_pda, false),
+            AccountMeta::new(proposal_pda, false),
+            AccountMeta::new_readonly(system_program::id(), false),
+            AccountMeta::new(owner.pubkey(), true),
+            AccountMeta::new_readonly(multisig_pda, false),
+            AccountMeta::new(proposal_pda, false),
+            AccountMeta::new(multisig_pda, false),
+            AccountMeta::new_readonly(program_id, false),
+            AccountMeta::new_readonly(system_program::id(), false),
+        ],
+        false,
+    )
+    .await;
+
+    match approve_2_result {
+        Err(BanksClientError::TransactionError(TransactionError::InstructionError(
+            _,
+            InstructionError::Custom(error_code),
+        ))) => assert_eq!(error_code, ProposalError::AlreadyApproved as u32),
+        _ => panic!("expected error"),
+    }
+}
