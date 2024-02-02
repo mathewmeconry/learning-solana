@@ -116,7 +116,7 @@ impl Multisig {
                 return Err(ProgramError::InvalidAccountData);
             }
             if account.2 {
-                account_meta.push(AccountMeta::new(*next_account.key, account.2))
+                account_meta.push(AccountMeta::new(*next_account.key, account.1))
             } else {
                 account_meta.push(AccountMeta::new_readonly(
                     *next_account.key,
