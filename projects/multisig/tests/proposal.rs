@@ -7,7 +7,7 @@ use multisig::{
 };
 use solana_program::{
     instruction::{AccountMeta, Instruction as SolanaInstruction, InstructionError},
-    program_memory, system_program,
+    system_program,
 };
 use solana_program_test::{tokio, BanksClientError};
 use solana_sdk::{signature::Keypair, signer::Signer, transaction::TransactionError};
