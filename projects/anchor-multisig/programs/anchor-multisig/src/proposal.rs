@@ -39,7 +39,13 @@ impl Proposal {
     }
 
     pub fn check_threshold(&self, multisig: &Multisig) -> Result<()> {
-        if self.approvers.len() < multisig.threshold as usize {
+        let mut valid_approvers = 0;
+        for approver in &self.approvers {
+            if multisig.is_member(&approver) {
+                valid_approvers += 1;
+            }
+        }
+        if valid_approvers < multisig.threshold as usize {
             return err!(CustomErrors::NotEnoughApprovals);
         }
         Ok(())
